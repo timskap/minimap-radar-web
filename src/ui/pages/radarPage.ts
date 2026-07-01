@@ -31,7 +31,8 @@ export function createRadarPage(): Page {
     el("button", { class: "round-btn", onclick: () => locationManager.simTurn(20) }, ["↻"]),
   ]);
 
-  const faceWrap = el("div", { class: "face-wrap" }, [face.canvas, zoomCol, simPad, hud]);
+  const attribution = el("div", { class: "attribution" }, ["© OpenStreetMap © CARTO"]);
+  const faceWrap = el("div", { class: "face-wrap" }, [face.canvas, zoomCol, simPad, hud, attribution]);
   const buttonRow = el("div", { class: "face-buttons" });
   const root = el("div", { class: "page radar-page" }, [clock.el, faceWrap, buttonRow]);
 

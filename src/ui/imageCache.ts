@@ -4,11 +4,13 @@
 
 const cache = new Map<string, HTMLImageElement>();
 
-export function getImage(src: string): HTMLImageElement {
+export function getImage(src: string, crossOrigin = false): HTMLImageElement {
   let img = cache.get(src);
   if (!img) {
     img = new Image();
     img.decoding = "async";
+    // Map tiles are cross-origin; request CORS so the canvas stays untainted.
+    if (crossOrigin) img.crossOrigin = "anonymous";
     img.src = src;
     cache.set(src, img);
   }

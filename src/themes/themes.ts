@@ -4,6 +4,7 @@
 // Five grayscale, Pixel blocks), the bottom/top button row and its clock.
 
 import type { ThemeId } from "../types.ts";
+import type { TileStyle } from "../ui/tileLayer.ts";
 
 export type FaceShape = "circle" | "rect";
 export type NorthStyle = "badge" | "image" | "edge";
@@ -33,8 +34,11 @@ export interface ThemePalette {
 
   // Radar face
   shape: FaceShape;
-  skin: string | null; // /assets/skins/*.png — the map skin, or null (Pixel)
-  mapBg: string; // fill when no skin / behind it
+  mapBg: string; // fill behind the map while tiles load
+  tileStyle: TileStyle; // OSM raster basemap (dark / light / voyager)
+  tileFilter: string; // canvas filter giving the theme its colour treatment
+  pixelate?: boolean; // Pixel: nearest-neighbour, chunky
+  zoomBias?: number; // Pixel: -1 for bigger blocks
   arrow: string; // /assets/arrows/*.png (empty → procedural)
   arrowGlow?: string;
   arrowSize: number; // px
@@ -44,8 +48,8 @@ export interface ThemePalette {
   vignette: boolean; // Phantasy / Wasteland / Five dark blurred edge
   edgeStroke?: string; // thin outer stroke
   tvNoise: boolean; // Wasteland CRT
-  tint?: string; // multiply tint over the skin (Wasteland)
-  grayscale: boolean; // Five
+  tint?: string; // multiply tint over the map (Wasteland green, Vice magenta)
+  tintAlpha?: number;
   northStyle: NorthStyle;
 
   // Buttons + clock
@@ -73,8 +77,9 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     accent2: "#60c1f1",
     font: `"Gtanum", "Jura", system-ui, sans-serif`,
     shape: "circle",
-    skin: `${A}/skins/vice.png`,
     mapBg: "#120a2a",
+    tileStyle: "dark",
+    tileFilter: "brightness(0.9) saturate(1.35) contrast(1.05)",
     arrow: `${A}/arrows/vice.png`,
     arrowSize: 40,
     arrowRotates: false,
@@ -83,7 +88,8 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     vignette: false,
     edgeStroke: "rgba(255,102,255,0.5)",
     tvNoise: false,
-    grayscale: false,
+    tint: "#ff40d0",
+    tintAlpha: 0.28,
     northStyle: "badge",
     buttons: [{ label: "TRACK", action: "track" }],
     buttonPos: "none",
@@ -106,8 +112,9 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     accent2: "#5c8a3a",
     font: `"HyliaSerif", Georgia, serif`,
     shape: "circle",
-    skin: `${A}/skins/phantasy.png`,
     mapBg: "#e9d9b0",
+    tileStyle: "light",
+    tileFilter: "sepia(0.8) saturate(1.5) hue-rotate(-12deg) brightness(1.03) contrast(0.95)",
     arrow: `${A}/arrows/phantasy.png`,
     arrowGlow: `${A}/arrows/phantasy-glow.png`,
     arrowSize: 40,
@@ -116,7 +123,6 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     vignette: true,
     edgeStroke: "#4f4f4f",
     tvNoise: false,
-    grayscale: false,
     northStyle: "image",
     buttons: [],
     buttonPos: "none",
@@ -139,8 +145,9 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     accent2: "#ff8a00",
     font: `"RobotoCondensed", "Jura", monospace`,
     shape: "rect",
-    skin: `${A}/skins/wasteland.png`,
     mapBg: "#031603",
+    tileStyle: "dark",
+    tileFilter: "grayscale(1) brightness(1.05) contrast(1.15)",
     arrow: `${A}/arrows/wasteland.png`,
     arrowSize: 24,
     arrowRotates: false,
@@ -149,7 +156,7 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     edgeStroke: "#4f4f4f",
     tvNoise: true,
     tint: "#43e36a",
-    grayscale: false,
+    tintAlpha: 0.5,
     northStyle: "edge",
     buttons: [
       { label: "STAT", action: "missions" },
@@ -176,8 +183,9 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     accent2: "#7ea6c8",
     font: `"RobotoCondensed", "Jura", sans-serif`,
     shape: "rect",
-    skin: `${A}/skins/five.png`,
     mapBg: "#cfcabb",
+    tileStyle: "light",
+    tileFilter: "grayscale(1) contrast(1.15) brightness(0.82)",
     arrow: `${A}/arrows/five.png`,
     arrowSize: 44,
     arrowRotates: false,
@@ -185,7 +193,6 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     vignette: true,
     edgeStroke: "#000",
     tvNoise: false,
-    grayscale: true,
     northStyle: "edge",
     buttons: [
       { label: "STATS", action: "missions" },
@@ -212,8 +219,11 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     accent2: "#e0c341",
     font: `"Jura", "Courier New", monospace`,
     shape: "rect",
-    skin: null, // rendered procedurally, north-up
     mapBg: "#4d8a36",
+    tileStyle: "voyager",
+    tileFilter: "saturate(1.9) contrast(1.2)",
+    pixelate: true,
+    zoomBias: -2,
     arrow: "", // procedural blocky arrow
     arrowSize: 22,
     arrowRotates: true,
@@ -221,7 +231,6 @@ export const THEMES: Record<ThemeId, ThemePalette> = {
     vignette: false,
     edgeStroke: "#2b2113",
     tvNoise: false,
-    grayscale: false,
     northStyle: "edge",
     buttons: [
       { label: "CRAFT", action: "missions" },

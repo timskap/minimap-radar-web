@@ -244,6 +244,18 @@ button {
   color: #ffcf33;
 }
 
+.attribution {
+  position: absolute;
+  bottom: 2px;
+  right: 6px;
+  font-size: 7px;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  pointer-events: none;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
 /* ---- Clock (per-theme) ---- */
 
 .clock {

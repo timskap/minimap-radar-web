@@ -12,6 +12,7 @@ import { missionManager } from "../game/missionManager.ts";
 import { themeManager } from "../state/themeManager.ts";
 import type { ThemePalette, FaceShape } from "../themes/themes.ts";
 import { getImage, isReady, preload } from "./imageCache.ts";
+import { TileLayer } from "./tileLayer.ts";
 import type { MissionXPPoint, OrbTier } from "../types.ts";
 
 const RANGE_STEPS = [100, 150, 250, 400, 600, 1000, 1500];
@@ -25,14 +26,13 @@ export class RadarFace {
   private size = 0;
   // TRACK toggles heading-up vs north-up (mirrors the app's TRACK button).
   trackNorthUp = false;
+  private tiles = new TileLayer();
 
   constructor() {
     this.canvas = document.createElement("canvas");
     this.canvas.className = "radar-canvas";
     this.ctx = this.canvas.getContext("2d")!;
     preload([
-      "/assets/skins/vice.png", "/assets/skins/phantasy.png",
-      "/assets/skins/wasteland.png", "/assets/skins/five.png",
       "/assets/arrows/vice.png", "/assets/arrows/phantasy.png",
       "/assets/arrows/phantasy-glow.png", "/assets/arrows/wasteland.png",
       "/assets/arrows/five.png", "/assets/overlays/tvnoise.png",
@@ -90,9 +90,9 @@ export class RadarFace {
     this.pathShape(shape, cx, cy, radius);
     ctx.clip();
 
-    this.drawSkin(p, cx, cy, radius, rot);
-
     const loc = locationManager.location;
+    this.drawBase(p, loc, cx, cy, radius, scale, rot);
+
     if (loc) {
       this.drawMarkers(p, loc, rot, cx, cy, half, scale, shape);
       this.drawOrbs(p, loc, rot, cx, cy, half, scale, shape);
@@ -132,61 +132,35 @@ export class RadarFace {
     ctx.closePath();
   }
 
-  // MARK: - skin
+  // MARK: - base map (real OSM raster tiles)
 
-  private drawSkin(p: ThemePalette, cx: number, cy: number, r: number, rot: number): void {
+  private drawBase(
+    p: ThemePalette, loc: Coord | null,
+    cx: number, cy: number, r: number, scale: number, rot: number,
+  ): void {
     const { ctx } = this;
     ctx.fillStyle = p.mapBg;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
-    if (!p.skin) {
-      this.drawPixelWorld(p, cx, cy, r, rot);
-      return;
+    if (loc) {
+      const coverPx = (p.shape === "circle" ? r : r * Math.SQRT2) * 1.2;
+      this.tiles.draw({
+        ctx, center: loc, cx, cy,
+        pxPerMeter: scale, rotationDeg: rot, coverPx,
+        style: p.tileStyle, filter: p.tileFilter,
+        pixelate: p.pixelate, retina: !p.pixelate, zoomBias: p.zoomBias,
+      });
     }
-    if (!isReady(p.skin)) return;
-    const img = getImage(p.skin);
 
-    // Cover the (rotating) face with the skin.
-    const cover = (p.shape === "circle" ? 2 * r : Math.hypot(2 * r, 2 * r)) * 1.15;
-    const s = Math.max(cover / img.naturalWidth, cover / img.naturalHeight);
-    const w = img.naturalWidth * s;
-    const h = img.naturalHeight * s;
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-toRad(rot));
-    if (p.grayscale) ctx.filter = "grayscale(1) contrast(1.25) brightness(1.05)";
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    ctx.filter = "none";
-    ctx.restore();
-
-    // Wasteland green tint (colorMultiply).
+    // Theme colour multiply (Wasteland Pip-Boy green, Vice magenta glow).
     if (p.tint) {
       ctx.save();
       ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = p.tintAlpha ?? 0.5;
       ctx.fillStyle = p.tint;
       ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
       ctx.restore();
     }
-  }
-
-  // Minecraft-ish blocky ground for Pixel (no skin image, north-up).
-  private drawPixelWorld(p: ThemePalette, cx: number, cy: number, r: number, _rot: number): void {
-    const { ctx } = this;
-    const cell = 20;
-    const water = "#3a6ea5";
-    const grass = "#4d8a36";
-    const grass2 = "#5ba838";
-    const dirt = "#8a5a2b";
-    for (let y = cy - r; y < cy + r; y += cell) {
-      for (let x = cx - r; x < cx + r; x += cell) {
-        const n = (Math.floor(x / cell) * 7 + Math.floor(y / cell) * 13) % 11;
-        ctx.fillStyle = n === 0 ? water : n === 1 ? dirt : n < 5 ? grass2 : grass;
-        ctx.fillRect(Math.round(x), Math.round(y), cell, cell);
-      }
-    }
-    void p;
   }
 
   // MARK: - projection

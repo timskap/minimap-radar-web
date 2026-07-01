@@ -5,18 +5,25 @@ the watch app's core loop — a themed radar mini-map centred on you, waypoint
 markers, and the location-based **missions** game (orbs, XP, levels, energy,
 streaks and daily/weekly/monthly challenges).
 
-Built with **Vite + vanilla TypeScript**, no framework and **no map tiles**:
-like the watch faces, the radar places markers and orbs by bearing + distance
-around the player rather than drawing streets, so it runs anywhere with just
-GPS + compass.
+Built with **Vite + vanilla TypeScript**, no framework. The face renders a
+**real OpenStreetMap** basemap (CARTO keyless raster tiles) straight onto the
+radar canvas — centred on you, scaled so map metres match the overlay, rotated
+heading-up and clipped to the face shape — with markers and mission orbs placed
+by bearing + distance on top, exactly like the watch faces.
 
-The faces use the **native app's own assets and per-face layout** — the theme
-map skins, player-arrow art, TV-noise/north overlays, marker icon sets and the
-Gtanum / Roboto Condensed / Hylia Serif fonts, all copied from the Xcode
-project into `public/assets`. Each theme reproduces its real chrome: Vice's
-circular pink-neon ring, Phantasy's parchment vignette + north crest,
-Wasteland's Pip-Boy CRT with STAT/RADIO/TRACK buttons, Five's grayscale GTA-
-style map, and Pixel's blocky north-up world.
+Each theme gives the same map its own treatment, using the **native app's own
+assets and per-face layout** — player-arrow art, TV-noise/north overlays,
+marker icon sets and the Gtanum / Roboto Condensed / Hylia Serif fonts, all
+copied from the Xcode project into `public/assets`:
+
+- **Vice** — dark basemap + magenta tint, circular pink-neon ring, Gtanum clock.
+- **Phantasy** — sepia parchment map, vignette + north crest, hero marker.
+- **Wasteland** — grayscale + Pip-Boy green + CRT noise, STAT/RADIO/TRACK.
+- **Five** — grayscale GTA-style map, STATS/RADIO/TRACK.
+- **Pixel** — a real map rendered chunky/nearest-neighbour, north-up, CRAFT/TRACK.
+
+Map data © OpenStreetMap contributors, tiles © CARTO. Tiles need a network
+connection; offline, the face falls back to the theme's base colour.
 
 ## The watch, in the browser
 
