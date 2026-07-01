@@ -1,0 +1,16 @@
+{
+  "name": "minimap-radar-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web port of the MiniMap Radar Apple Watch experience — themed radar mini-map, markers and the missions game loop, no map tiles.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
