@@ -25,10 +25,9 @@ function applyTheme(): void {
   r.setProperty("--text-dim", p.textDim);
   r.setProperty("--accent", p.accent);
   r.setProperty("--accent2", p.accent2);
-  r.setProperty("--ring", p.ring);
-  r.setProperty("--ring-strong", p.ringStrong);
   r.setProperty("--font", p.font);
   r.setProperty("--map-bg", p.mapBg);
+  // --ring / --ring-strong derive from --accent via color-mix in the CSS.
   document.documentElement.dataset.theme = p.id;
 }
 

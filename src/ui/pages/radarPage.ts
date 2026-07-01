@@ -1,12 +1,13 @@
-// Page 0: the themed radar face — the watch's main map page. Shows the clock,
-// the radar canvas, a mission HUD capsule while a mission runs, zoom buttons,
-// and (in simulator mode) movement controls so it works on a desktop.
+// Page 0: the themed map face. Clock on top, the map face, the theme's button
+// row (STAT/RADIO/TRACK for Wasteland/Five, CRAFT/TRACK for Pixel), a mission
+// HUD capsule while a mission runs, zoom, and a desktop movement simulator.
 
-import { el, type Page } from "../dom.ts";
+import { el, clear, type Page } from "../dom.ts";
 import { createClock } from "../clock.ts";
 import { RadarFace } from "../radarFace.ts";
 import { locationManager } from "../../state/location.ts";
 import { missionManager } from "../../game/missionManager.ts";
+import { themeManager } from "../../state/themeManager.ts";
 import { setPage } from "../nav.ts";
 
 function fmtTime(sec: number): string {
@@ -20,12 +21,10 @@ export function createRadarPage(): Page {
   const face = new RadarFace();
 
   const hud = el("button", { class: "mission-hud hidden", onclick: () => setPage(2) });
-
-  const zoomIn = el("button", { class: "round-btn", onclick: () => face.zoomIn() }, ["+"]);
-  const zoomOut = el("button", { class: "round-btn", onclick: () => face.zoomOut() }, ["−"]);
-  const zoomCol = el("div", { class: "zoom-col" }, [zoomIn, zoomOut]);
-
-  // Simulator D-pad (only shown when running on simulated location).
+  const zoomCol = el("div", { class: "zoom-col" }, [
+    el("button", { class: "round-btn", onclick: () => face.zoomIn() }, ["+"]),
+    el("button", { class: "round-btn", onclick: () => face.zoomOut() }, ["−"]),
+  ]);
   const simPad = el("div", { class: "sim-pad" }, [
     el("button", { class: "round-btn", onclick: () => locationManager.simTurn(-20) }, ["↺"]),
     el("button", { class: "round-btn", onclick: () => locationManager.simStep(25) }, ["↑"]),
@@ -33,7 +32,40 @@ export function createRadarPage(): Page {
   ]);
 
   const faceWrap = el("div", { class: "face-wrap" }, [face.canvas, zoomCol, simPad, hud]);
-  const root = el("div", { class: "page radar-page" }, [clock.el, faceWrap]);
+  const buttonRow = el("div", { class: "face-buttons" });
+  const root = el("div", { class: "page radar-page" }, [clock.el, faceWrap, buttonRow]);
+
+  let lastTheme = "";
+
+  const renderButtons = () => {
+    const p = themeManager.palette;
+    buttonRow.className = `face-buttons pos-${p.buttonPos} style-${p.buttonStyle}`;
+    // Button row lives above or below the face; move it in the DOM.
+    if (p.buttonPos === "top" && root.firstElementChild !== null) {
+      root.insertBefore(buttonRow, faceWrap);
+    } else {
+      root.appendChild(buttonRow);
+    }
+    clear(buttonRow);
+    if (p.buttonPos === "none" || p.buttons.length === 0) return;
+    for (const b of p.buttons) {
+      const btn = el("button", {
+        class: `face-btn ${b.action === "track" && !face.trackNorthUp ? "active" : ""}`,
+        onclick: () => {
+          if (b.action === "missions") setPage(2);
+          else if (b.action === "track") { face.trackNorthUp = !face.trackNorthUp; renderButtons(); }
+          else if (b.action === "radio") flashRadio();
+        },
+      }, [b.label]);
+      buttonRow.append(btn);
+    }
+  };
+
+  const flashRadio = () => {
+    const t = el("div", { class: "radio-toast" }, ["📻 no signal in the wasteland"]);
+    faceWrap.append(t);
+    setTimeout(() => t.remove(), 1400);
+  };
 
   const layout = () => {
     const size = Math.min(faceWrap.clientWidth, faceWrap.clientHeight);
@@ -42,11 +74,17 @@ export function createRadarPage(): Page {
 
   const update = () => {
     clock.update();
+    if (themeManager.current !== lastTheme) {
+      lastTheme = themeManager.current;
+      renderButtons();
+      layout();
+    }
     simPad.classList.toggle("hidden", !locationManager.simulated);
     const s = missionManager.session;
     if (missionManager.isMissionActive && s) {
       hud.classList.remove("hidden");
-      hud.innerHTML = `<span class="hud-timer">⏱ ${fmtTime(s.timeRemaining)}</span>` +
+      hud.innerHTML =
+        `<span class="hud-timer">⏱ ${fmtTime(s.timeRemaining)}</span>` +
         `<span class="hud-orbs">◉ ${s.collectedCount}/${s.totalPoints}</span>`;
     } else {
       hud.classList.add("hidden");
@@ -55,15 +93,8 @@ export function createRadarPage(): Page {
 
   return {
     el: root,
-    onShow: () => {
-      layout();
-      face.start();
-      update();
-    },
+    onShow: () => { renderButtons(); layout(); face.start(); update(); },
     onHide: () => face.stop(),
-    update: () => {
-      layout();
-      update();
-    },
+    update: () => { layout(); update(); },
   };
 }

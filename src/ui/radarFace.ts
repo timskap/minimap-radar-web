@@ -1,43 +1,50 @@
-// The themed radar mini-map. No map tiles: the player sits at the centre and
-// markers / mission orbs are placed by bearing + distance in a heading-up
-// frame (forward = up), clamped to the rim — exactly how the watch faces
-// position overlays with MapViewUtility's rotate + clamp math.
+// The themed map face, rebuilt around the native app's real layout + assets.
+// Each theme skins a rotating map image (heading-up, except Pixel which is
+// north-up), clips it to a circle or rounded rect, overlays its chrome (Vice
+// pink ring, Phantasy vignette + crest, Wasteland CRT noise + green tint, Five
+// grayscale) and drops the real player-arrow image at the centre. Markers and
+// mission orbs are still placed by bearing + distance, exactly like the app.
 
-import { bearingDegrees, distanceMeters, toRad, formatDistance, type Coord } from "../geo/geo.ts";
+import { bearingDegrees, distanceMeters, toRad, type Coord } from "../geo/geo.ts";
 import { locationManager } from "../state/location.ts";
 import { markerStore } from "../state/markers.ts";
 import { missionManager } from "../game/missionManager.ts";
 import { themeManager } from "../state/themeManager.ts";
-import type { ThemePalette } from "../themes/themes.ts";
+import type { ThemePalette, FaceShape } from "../themes/themes.ts";
+import { getImage, isReady, preload } from "./imageCache.ts";
 import type { MissionXPPoint, OrbTier } from "../types.ts";
 
-const RANGE_STEPS = [100, 150, 250, 400, 600, 1000, 1500]; // metres, radius of face
+const RANGE_STEPS = [100, 150, 250, 400, 600, 1000, 1500];
 
 export class RadarFace {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private rangeIndex = 2; // 250 m
+  private rangeIndex = 2;
   private raf = 0;
   private dpr = Math.min(window.devicePixelRatio || 1, 2);
   private size = 0;
+  // TRACK toggles heading-up vs north-up (mirrors the app's TRACK button).
+  trackNorthUp = false;
 
   constructor() {
     this.canvas = document.createElement("canvas");
     this.canvas.className = "radar-canvas";
     this.ctx = this.canvas.getContext("2d")!;
+    preload([
+      "/assets/skins/vice.png", "/assets/skins/phantasy.png",
+      "/assets/skins/wasteland.png", "/assets/skins/five.png",
+      "/assets/arrows/vice.png", "/assets/arrows/phantasy.png",
+      "/assets/arrows/phantasy-glow.png", "/assets/arrows/wasteland.png",
+      "/assets/arrows/five.png", "/assets/overlays/tvnoise.png",
+      "/assets/overlays/north-phantasy.png",
+    ]);
   }
 
   get rangeMeters(): number {
     return RANGE_STEPS[this.rangeIndex];
   }
-
-  zoomIn(): void {
-    this.rangeIndex = Math.max(0, this.rangeIndex - 1);
-  }
-
-  zoomOut(): void {
-    this.rangeIndex = Math.min(RANGE_STEPS.length - 1, this.rangeIndex + 1);
-  }
+  zoomIn(): void { this.rangeIndex = Math.max(0, this.rangeIndex - 1); }
+  zoomOut(): void { this.rangeIndex = Math.min(RANGE_STEPS.length - 1, this.rangeIndex + 1); }
 
   resize(cssSize: number): void {
     this.size = cssSize;
@@ -50,16 +57,15 @@ export class RadarFace {
 
   start(): void {
     if (this.raf) return;
-    const loop = () => {
-      this.draw();
-      this.raf = requestAnimationFrame(loop);
-    };
+    const loop = () => { this.draw(); this.raf = requestAnimationFrame(loop); };
     this.raf = requestAnimationFrame(loop);
   }
+  stop(): void { cancelAnimationFrame(this.raf); this.raf = 0; }
 
-  stop(): void {
-    cancelAnimationFrame(this.raf);
-    this.raf = 0;
+  // Effective rotation of the map (0 in north-up modes).
+  private mapRotation(p: ThemePalette): number {
+    if (p.northUp || this.trackNorthUp) return 0;
+    return locationManager.heading;
   }
 
   private draw(): void {
@@ -72,227 +78,176 @@ export class RadarFace {
 
     const cx = size / 2;
     const cy = size / 2;
-    const radius = size / 2 - 4;
-    const scale = radius / this.rangeMeters; // px per metre
-    const heading = locationManager.heading;
+    const shape = p.shape;
+    const inset = shape === "circle" ? 4 : 6;
+    const radius = size / 2 - inset; // circle radius / rect half-extent
+    const half = radius;
+    const scale = half / this.rangeMeters;
+    const rot = this.mapRotation(p);
 
-    // Clip everything to the round face.
+    // --- clip to the face shape, draw skin + overlays inside it ---
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    this.pathShape(shape, cx, cy, radius);
     ctx.clip();
 
-    this.drawBackdrop(p, cx, cy, radius, heading);
-    this.drawRings(p, cx, cy, radius);
+    this.drawSkin(p, cx, cy, radius, rot);
 
     const loc = locationManager.location;
     if (loc) {
-      this.drawMarkers(p, loc, heading, cx, cy, radius, scale);
-      this.drawOrbs(p, loc, heading, cx, cy, radius, scale);
+      this.drawMarkers(p, loc, rot, cx, cy, half, scale, shape);
+      this.drawOrbs(p, loc, rot, cx, cy, half, scale, shape);
     }
 
-    ctx.restore(); // remove clip
+    if (p.tvNoise) this.drawTVNoise(cx, cy, radius);
+    if (p.vignette) this.drawVignette(cx, cy, radius, shape);
+    ctx.restore();
 
-    this.drawFaceEdge(p, cx, cy, radius);
-    this.drawNorth(p, cx, cy, radius, heading);
+    // --- chrome on top of the clip ---
+    this.drawEdge(p, cx, cy, radius, shape);
+    this.drawNorth(p, cx, cy, radius, shape);
     this.drawPlayer(p, cx, cy);
-    this.drawRangeLabel(p, cx, size, radius);
 
     ctx.restore();
   }
 
-  // MARK: - Layers
+  // MARK: - geometry
 
-  private drawBackdrop(p: ThemePalette, cx: number, cy: number, r: number, heading: number): void {
+  private pathShape(shape: FaceShape, cx: number, cy: number, r: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    if (shape === "circle") {
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    } else {
+      this.roundRect(cx - r, cy - r, r * 2, r * 2, 10);
+    }
+  }
+
+  private roundRect(x: number, y: number, w: number, h: number, rad: number): void {
+    const { ctx } = this;
+    ctx.moveTo(x + rad, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rad);
+    ctx.arcTo(x + w, y + h, x, y + h, rad);
+    ctx.arcTo(x, y + h, x, y, rad);
+    ctx.arcTo(x, y, x + w, y, rad);
+    ctx.closePath();
+  }
+
+  // MARK: - skin
+
+  private drawSkin(p: ThemePalette, cx: number, cy: number, r: number, rot: number): void {
     const { ctx } = this;
     ctx.fillStyle = p.mapBg;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
-    switch (p.backdrop) {
-      case "grid":
-        this.drawGrid(p, cx, cy, r, heading, 26, false);
-        break;
-      case "clean":
-        this.drawGrid(p, cx, cy, r, heading, 34, false);
-        break;
-      case "blocks":
-        this.drawBlocks(p, cx, cy, r);
-        break;
-      case "parchment":
-        this.drawParchment(p, cx, cy, r, heading);
-        break;
-      case "crt":
-        this.drawGrid(p, cx, cy, r, heading, 30, false);
-        this.drawScanlines(cx, cy, r);
-        break;
+    if (!p.skin) {
+      this.drawPixelWorld(p, cx, cy, r, rot);
+      return;
     }
-  }
+    if (!isReady(p.skin)) return;
+    const img = getImage(p.skin);
 
-  // A heading-up grid: lines rotate with the player so the world spins, not
-  // the arrow (matching the watch's map rotation).
-  private drawGrid(
-    p: ThemePalette,
-    cx: number,
-    cy: number,
-    r: number,
-    heading: number,
-    step: number,
-    _strong: boolean,
-  ): void {
-    const { ctx } = this;
+    // Cover the (rotating) face with the skin.
+    const cover = (p.shape === "circle" ? 2 * r : Math.hypot(2 * r, 2 * r)) * 1.15;
+    const s = Math.max(cover / img.naturalWidth, cover / img.naturalHeight);
+    const w = img.naturalWidth * s;
+    const h = img.naturalHeight * s;
+
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(-toRad(heading));
-    ctx.strokeStyle = p.ring;
-    ctx.lineWidth = 1;
-    const reach = r * 1.6;
-    for (let x = -reach; x <= reach; x += step) {
-      ctx.beginPath();
-      ctx.moveTo(x, -reach);
-      ctx.lineTo(x, reach);
-      ctx.stroke();
-    }
-    for (let y = -reach; y <= reach; y += step) {
-      ctx.beginPath();
-      ctx.moveTo(-reach, y);
-      ctx.lineTo(reach, y);
-      ctx.stroke();
-    }
+    ctx.rotate(-toRad(rot));
+    if (p.grayscale) ctx.filter = "grayscale(1) contrast(1.25) brightness(1.05)";
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.filter = "none";
     ctx.restore();
+
+    // Wasteland green tint (colorMultiply).
+    if (p.tint) {
+      ctx.save();
+      ctx.globalCompositeOperation = "multiply";
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = p.tint;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    }
   }
 
-  private drawBlocks(p: ThemePalette, cx: number, cy: number, r: number): void {
+  // Minecraft-ish blocky ground for Pixel (no skin image, north-up).
+  private drawPixelWorld(p: ThemePalette, cx: number, cy: number, r: number, _rot: number): void {
     const { ctx } = this;
-    const cell = 18;
+    const cell = 20;
+    const water = "#3a6ea5";
+    const grass = "#4d8a36";
+    const grass2 = "#5ba838";
+    const dirt = "#8a5a2b";
     for (let y = cy - r; y < cy + r; y += cell) {
       for (let x = cx - r; x < cx + r; x += cell) {
-        const n = (Math.floor(x / cell) * 7 + Math.floor(y / cell) * 13) % 5;
-        ctx.fillStyle = n === 0 ? p.water : n < 3 ? p.land : p.mapBg;
-        ctx.fillRect(x, y, cell - 1, cell - 1);
+        const n = (Math.floor(x / cell) * 7 + Math.floor(y / cell) * 13) % 11;
+        ctx.fillStyle = n === 0 ? water : n === 1 ? dirt : n < 5 ? grass2 : grass;
+        ctx.fillRect(Math.round(x), Math.round(y), cell, cell);
       }
     }
+    void p;
   }
 
-  private drawParchment(p: ThemePalette, cx: number, cy: number, _r: number, heading: number): void {
-    const { ctx } = this;
-    // Soft "ink" contour blobs so parchment doesn't read as empty.
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(-toRad(heading));
-    ctx.strokeStyle = p.ring;
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 5; i++) {
-      const rr = 22 + i * 26;
-      ctx.beginPath();
-      for (let a = 0; a <= Math.PI * 2 + 0.01; a += 0.3) {
-        const wob = rr + Math.sin(a * 3 + i) * 6 + Math.cos(a * 5 - i) * 4;
-        const px = Math.cos(a) * wob;
-        const py = Math.sin(a) * wob;
-        if (a === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  private drawScanlines(cx: number, cy: number, r: number): void {
-    const { ctx } = this;
-    ctx.save();
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = "#000";
-    for (let y = cy - r; y < cy + r; y += 3) {
-      ctx.fillRect(cx - r, y, r * 2, 1.4);
-    }
-    ctx.restore();
-  }
-
-  private drawRings(p: ThemePalette, cx: number, cy: number, r: number): void {
-    const { ctx } = this;
-    ctx.strokeStyle = p.ring;
-    ctx.lineWidth = 1;
-    for (const frac of [0.33, 0.66]) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, r * frac, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // Cross-hair through centre.
-    ctx.beginPath();
-    ctx.moveTo(cx - r, cy);
-    ctx.lineTo(cx + r, cy);
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx, cy + r);
-    ctx.globalAlpha = 0.5;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
+  // MARK: - projection
 
   private project(
-    loc: Coord,
-    point: Coord,
-    heading: number,
-    cx: number,
-    cy: number,
-    radius: number,
-    scale: number,
+    loc: Coord, point: Coord, rot: number,
+    cx: number, cy: number, half: number, scale: number, shape: FaceShape,
   ): { x: number; y: number; dist: number; clamped: boolean } {
     const dist = distanceMeters(loc, point);
-    const rel = toRad(bearingDegrees(loc, point) - heading);
+    const rel = toRad(bearingDegrees(loc, point) - rot);
     let sx = dist * Math.sin(rel) * scale;
     let sy = -dist * Math.cos(rel) * scale;
-    const rim = radius - 10;
-    const mag = Math.hypot(sx, sy);
+    const rim = half - 12;
     let clamped = false;
-    if (mag > rim && mag > 0) {
-      const f = rim / mag;
-      sx *= f;
-      sy *= f;
-      clamped = true;
+    if (shape === "circle") {
+      const mag = Math.hypot(sx, sy);
+      if (mag > rim && mag > 0) { const f = rim / mag; sx *= f; sy *= f; clamped = true; }
+    } else {
+      if (Math.abs(sx) > rim || Math.abs(sy) > rim) {
+        const f = rim / Math.max(Math.abs(sx), Math.abs(sy));
+        sx *= f; sy *= f; clamped = true;
+      }
     }
     return { x: cx + sx, y: cy + sy, dist, clamped };
   }
 
+  // MARK: - markers
+
   private drawMarkers(
-    p: ThemePalette,
-    loc: Coord,
-    heading: number,
-    cx: number,
-    cy: number,
-    radius: number,
-    scale: number,
+    p: ThemePalette, loc: Coord, rot: number,
+    cx: number, cy: number, half: number, scale: number, shape: FaceShape,
   ): void {
     const { ctx } = this;
+    const iconSize = Math.max(20, half * 0.16);
     for (const m of markerStore.markers) {
-      const pr = this.project(loc, { lat: m.lat, lon: m.lon }, heading, cx, cy, radius, scale);
-      const color = m.color || p.markerDefault;
-
+      const pr = this.project(loc, { lat: m.lat, lon: m.lon }, rot, cx, cy, half, scale, shape);
       ctx.save();
-      ctx.globalAlpha = pr.clamped ? 0.7 : 1;
-      // dot
-      ctx.beginPath();
-      ctx.arc(pr.x, pr.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "rgba(0,0,0,0.5)";
-      ctx.stroke();
-
-      // icon + label just above the dot
-      ctx.font = "11px " + p.font;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.fillStyle = p.text;
-      ctx.shadowColor = "rgba(0,0,0,0.7)";
-      ctx.shadowBlur = 3;
-      ctx.fillText(`${m.icon} ${m.name}`, pr.x, pr.y - 7);
-      ctx.shadowBlur = 0;
-      ctx.font = "9px " + p.font;
-      ctx.fillStyle = p.textDim;
-      ctx.textBaseline = "top";
-      ctx.fillText(formatDistance(pr.dist), pr.x, pr.y + 7);
+      ctx.globalAlpha = pr.clamped ? 0.75 : 1;
+      if (m.icon && m.icon !== "Letter" && isReady(m.icon)) {
+        const img = getImage(m.icon);
+        ctx.shadowColor = "rgba(0,0,0,0.6)";
+        ctx.shadowBlur = 3;
+        ctx.drawImage(img, pr.x - iconSize / 2, pr.y - iconSize / 2, iconSize, iconSize);
+      } else {
+        // Letter marker: rounded square + first glyph (matches MarkerView).
+        const s = iconSize;
+        ctx.fillStyle = m.color || p.accent;
+        ctx.beginPath();
+        this.roundRect(pr.x - s / 2, pr.y - s / 2, s, s, 6);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.font = `bold ${Math.round(s * 0.7)}px ${p.font}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText((m.name.trim()[0] || "?").toUpperCase(), pr.x, pr.y + 1);
+      }
       ctx.restore();
     }
   }
+
+  // MARK: - orbs
 
   private orbColor(tier: OrbTier): string {
     switch (tier) {
@@ -303,33 +258,25 @@ export class RadarFace {
   }
 
   private drawOrbs(
-    p: ThemePalette,
-    loc: Coord,
-    heading: number,
-    cx: number,
-    cy: number,
-    radius: number,
-    scale: number,
+    p: ThemePalette, loc: Coord, rot: number,
+    cx: number, cy: number, half: number, scale: number, shape: FaceShape,
   ): void {
     const session = missionManager.session;
     if (!session || session.ended) return;
     const { ctx } = this;
     const nextIndex = session.nextOrderIndex;
-    const t = performance.now() / 1000;
-    const pulse = 1 + Math.sin(t * 4) * 0.12;
+    const pulse = 1 + Math.sin(performance.now() / 250) * 0.12;
 
     for (const orb of session.xpPoints as MissionXPPoint[]) {
       if (orb.collected) continue;
-      const pr = this.project(loc, { lat: orb.lat, lon: orb.lon }, heading, cx, cy, radius, scale);
+      const pr = this.project(loc, { lat: orb.lat, lon: orb.lon }, rot, cx, cy, half, scale, shape);
       const isNext = nextIndex != null && orb.orderIndex === nextIndex;
       const base = orb.tier === "large" ? 6.5 : orb.tier === "medium" ? 5.5 : 4.5;
       const rad = base * (isNext ? pulse : 1);
       const color = this.orbColor(orb.tier);
-
       ctx.save();
       ctx.globalAlpha = pr.clamped ? 0.55 : 1;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      if (p.orbGlow) { ctx.shadowColor = color; ctx.shadowBlur = 8; }
       ctx.beginPath();
       ctx.arc(pr.x, pr.y, rad, 0, Math.PI * 2);
       ctx.fillStyle = color;
@@ -349,59 +296,151 @@ export class RadarFace {
     }
   }
 
-  private drawFaceEdge(p: ThemePalette, cx: number, cy: number, r: number): void {
+  // MARK: - chrome
+
+  private drawTVNoise(cx: number, cy: number, r: number): void {
+    const src = "/assets/overlays/tvnoise.png";
+    if (!isReady(src)) return;
     const { ctx } = this;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = p.ringStrong;
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    const jitter = (performance.now() % 140 < 70 ? 0 : 2);
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(getImage(src), cx - r, cy - r + jitter, r * 2, r * 2);
+    ctx.restore();
   }
 
-  private drawNorth(p: ThemePalette, cx: number, cy: number, r: number, heading: number): void {
+  private drawVignette(cx: number, cy: number, r: number, shape: FaceShape): void {
     const { ctx } = this;
-    const rel = toRad(-heading);
-    const nx = cx + Math.sin(rel) * (r - 14);
-    const ny = cy - Math.cos(rel) * (r - 14);
     ctx.save();
-    ctx.fillStyle = p.accent;
-    ctx.font = `bold 12px ${p.font}`;
+    const g = ctx.createRadialGradient(cx, cy, r * 0.74, cx, cy, r * 1.02);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,0.55)");
+    ctx.fillStyle = g;
+    if (shape === "circle") {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  }
+
+  private drawEdge(p: ThemePalette, cx: number, cy: number, r: number, shape: FaceShape): void {
+    const { ctx } = this;
+    if (p.ring) {
+      ctx.save();
+      this.pathShape(shape, cx, cy, r);
+      ctx.strokeStyle = p.ring.color;
+      ctx.lineWidth = Math.max(3, r * p.ring.width);
+      ctx.shadowColor = p.ring.color;
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (p.edgeStroke) {
+      ctx.save();
+      this.pathShape(shape, cx, cy, r);
+      ctx.strokeStyle = p.edgeStroke;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  private drawNorth(p: ThemePalette, cx: number, cy: number, r: number, shape: FaceShape): void {
+    const { ctx } = this;
+    const rot = this.mapRotation(p);
+    if (p.northStyle === "image") {
+      const src = "/assets/overlays/north-phantasy.png";
+      if (!isReady(src)) return;
+      const img = getImage(src);
+      const s = 26;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-toRad(rot));
+      ctx.drawImage(img, -s / 2, -r + 6, s, s);
+      ctx.restore();
+      return;
+    }
+    // badge (Vice) or edge (Five/Pixel): compute N position.
+    let nx: number, ny: number;
+    if (shape === "circle") {
+      const rel = toRad(-rot);
+      nx = cx + Math.sin(rel) * (r - 16);
+      ny = cy - Math.cos(rel) * (r - 16);
+    } else {
+      // clamp the north direction to the square edge (app's northPosition).
+      const a = toRad(-rot);
+      const dx = Math.sin(a);
+      const dy = -Math.cos(a);
+      const f = 1 / Math.max(Math.abs(dx), Math.abs(dy));
+      nx = cx + dx * f * (r - 14);
+      ny = cy + dy * f * (r - 14);
+    }
+    ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("N", nx, ny);
+    if (p.northStyle === "badge") {
+      ctx.beginPath();
+      ctx.arc(nx, ny, 11, 0, Math.PI * 2);
+      ctx.fillStyle = "#000";
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold 13px ${p.font}`;
+      ctx.fillText("N", nx, ny + 0.5);
+    } else {
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(nx - 9, ny - 9, 18, 18);
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold 12px ${p.font}`;
+      ctx.fillText("N", nx, ny + 1);
+    }
     ctx.restore();
   }
 
   private drawPlayer(p: ThemePalette, cx: number, cy: number): void {
     const { ctx } = this;
+    const rotate = p.arrowRotates ? locationManager.heading : 0;
+
+    // Pixel: procedural blocky arrow.
+    if (!p.arrow) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(toRad(rotate));
+      ctx.fillStyle = p.accent2;
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, -11);
+      ctx.lineTo(8, 9);
+      ctx.lineTo(0, 4);
+      ctx.lineTo(-8, 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (p.arrowGlow && isReady(p.arrowGlow)) {
+      const glow = getImage(p.arrowGlow);
+      const gs = p.arrowSize * 2.4;
+      ctx.save();
+      ctx.globalAlpha = 0.8;
+      ctx.drawImage(glow, cx - gs / 2, cy - gs / 2 - p.arrowSize * 0.5, gs, gs);
+      ctx.restore();
+    }
+    if (!isReady(p.arrow)) return;
+    const img = getImage(p.arrow);
+    // Preserve aspect ratio of the arrow art.
+    const aspect = img.naturalHeight / img.naturalWidth || 1;
+    const w = p.arrowSize;
+    const h = p.arrowSize * aspect;
     ctx.save();
     ctx.translate(cx, cy);
-    // Arrow points up (forward) — heading-up frame.
-    ctx.beginPath();
-    ctx.moveTo(0, -11);
-    ctx.lineTo(7, 8);
-    ctx.lineTo(0, 3);
-    ctx.lineTo(-7, 8);
-    ctx.closePath();
-    ctx.fillStyle = p.player;
-    ctx.shadowColor = p.player;
-    ctx.shadowBlur = 8;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  private drawRangeLabel(p: ThemePalette, cx: number, size: number, radius: number): void {
-    const { ctx } = this;
-    ctx.save();
-    ctx.fillStyle = p.textDim;
-    ctx.font = `10px ${p.font}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillText(`◎ ${formatDistance(this.rangeMeters)}`, cx, size / 2 + radius - 6);
+    ctx.rotate(toRad(rotate));
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
 }

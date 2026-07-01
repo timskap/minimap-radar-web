@@ -10,6 +10,14 @@ like the watch faces, the radar places markers and orbs by bearing + distance
 around the player rather than drawing streets, so it runs anywhere with just
 GPS + compass.
 
+The faces use the **native app's own assets and per-face layout** — the theme
+map skins, player-arrow art, TV-noise/north overlays, marker icon sets and the
+Gtanum / Roboto Condensed / Hylia Serif fonts, all copied from the Xcode
+project into `public/assets`. Each theme reproduces its real chrome: Vice's
+circular pink-neon ring, Phantasy's parchment vignette + north crest,
+Wasteland's Pip-Boy CRT with STAT/RADIO/TRACK buttons, Five's grayscale GTA-
+style map, and Pixel's blocky north-up world.
+
 ## The watch, in the browser
 
 A watch-shaped shell pages vertically through four screens (dots on the right,

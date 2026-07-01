@@ -13,6 +13,16 @@
   src: url("/fonts/HyliaSerifBeta-Regular.otf") format("opentype");
   font-display: swap;
 }
+@font-face {
+  font-family: "Gtanum";
+  src: url("/fonts/Gtanum.otf") format("opentype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "RobotoCondensed";
+  src: url("/fonts/RobotoCondensed-Medium.ttf") format("truetype");
+  font-display: swap;
+}
 
 :root {
   --bg: #05070d;
@@ -25,6 +35,9 @@
   --ring-strong: rgba(255, 255, 255, 0.4);
   --font: "Jura", system-ui, sans-serif;
   --map-bg: #10131c;
+  /* Ring colours derive from the live accent so they re-tint per theme. */
+  --ring: color-mix(in srgb, var(--accent) 18%, transparent);
+  --ring-strong: color-mix(in srgb, var(--accent) 55%, transparent);
   color-scheme: dark;
 }
 
@@ -231,33 +244,51 @@ button {
   color: #ffcf33;
 }
 
-/* ---- Clock ---- */
+/* ---- Clock (per-theme) ---- */
 
 .clock {
-  text-align: center;
-  line-height: 1.1;
   z-index: 2;
+  line-height: 1.05;
+  font-family: var(--clock-font, var(--font));
+  color: var(--clock-color, var(--text));
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
 }
 .clock-time {
-  display: block;
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 1px;
-  color: var(--text);
-  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .clock-date {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.9;
 }
-.clock-vault .clock-time {
-  color: var(--accent2);
-  text-shadow: 0 0 12px var(--accent2);
+/* Vice: big centred time only */
+.clock-time.clock-time,
+.clock-time { text-shadow: 0 0 10px color-mix(in srgb, var(--clock-color) 45%, transparent); }
+/* Wasteland / Five: date left, time right across the width */
+.clock-dateTime {
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 6px;
 }
-.clock-phantasy .clock-time {
-  font-family: "HyliaSerif", serif;
+.clock-dateTime .clock-time { font-size: 16px; }
+.clock-dateTime .clock-date { font-size: 14px; }
+/* Pixel: blocky green bar */
+.clock-bar {
+  justify-content: space-between;
+  width: 100%;
+  margin: -4px 0 2px;
+  padding: 6px 12px;
+  border: 3px solid var(--clock-bar-border, #2b2113);
+  background: var(--clock-bar-bg, #7fb238);
+  text-shadow: none;
 }
+.clock-bar .clock-time,
+.clock-bar .clock-date { font-size: 15px; font-weight: 800; text-shadow: none; }
 
 /* ---- Headers / shared ---- */
 
@@ -362,10 +393,35 @@ h2,
   border: 1px solid var(--ring);
 }
 .marker-icon {
-  font-size: 20px;
-  width: 26px;
-  text-align: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
 }
+.marker-icon-img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.marker-icon.letter {
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
+.chip-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.scroll-x {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.scroll-x::-webkit-scrollbar { height: 0; }
+.scroll-x .chip { flex: 0 0 auto; }
 .marker-meta {
   flex: 1;
   display: flex;
@@ -820,13 +876,64 @@ h2,
   color: var(--accent);
 }
 
+/* ---- Face button rows (STAT / RADIO / TRACK, CRAFT / TRACK) ---- */
+
+.face-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px 0 2px;
+}
+.face-buttons.pos-none { display: none; }
+.face-btn {
+  font-family: var(--font);
+  letter-spacing: 1px;
+  background: #000;
+  color: var(--accent);
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.style-fallout .face-btn {
+  border-radius: 0;
+  border-color: transparent;
+}
+.style-fallout .face-btn.active {
+  border-color: var(--accent);
+}
+.style-five .face-btn {
+  border-radius: 4px;
+  border: 1px solid var(--ring-strong);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text);
+}
+.style-five .face-btn.active {
+  background: var(--accent);
+  color: #05070d;
+  border-color: transparent;
+}
+.face-btn:active { transform: scale(0.95); }
+
+.radio-toast {
+  position: absolute;
+  bottom: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  animation: fade-in 0.2s ease;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
 /* ---- Theme-specific chrome ---- */
 
-[data-theme="wasteland"] body,
 [data-theme="wasteland"] .watch-frame {
-  text-shadow: 0 0 2px rgba(56, 255, 122, 0.4);
-}
-[data-theme="phantasy"] .clock-time {
-  color: #c8912f;
-  text-shadow: none;
+  text-shadow: 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
 }

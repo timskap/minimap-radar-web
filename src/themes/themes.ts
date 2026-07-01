@@ -1,149 +1,237 @@
-// The five watch faces as web palettes. Each theme drives the radar-face
-// canvas colours, the background style, and the CSS custom properties for the
-// surrounding chrome. Colours are drawn from Themes.swift + the theme map
-// views (Vice neon, Phantasy parchment, Wasteland Pip-Boy CRT, Five, Pixel).
+// The five watch faces, ported with the native app's real layout + assets:
+// each theme carries its face shape, map-skin image, player-arrow image, the
+// chrome (Vice pink ring, Phantasy vignette + north crest, Wasteland CRT noise,
+// Five grayscale, Pixel blocks), the bottom/top button row and its clock.
 
 import type { ThemeId } from "../types.ts";
 
-export type BackdropStyle = "grid" | "parchment" | "crt" | "clean" | "blocks";
+export type FaceShape = "circle" | "rect";
+export type NorthStyle = "badge" | "image" | "edge";
+export type ButtonStyle = "fallout" | "five" | "none";
+export type ClockLayout = "time" | "dateTime" | "bar";
+export type IconSet = "vice" | "wasteland" | "phantasy";
+
+export interface FaceButton {
+  label: string;
+  action: "missions" | "track" | "radio";
+}
 
 export interface ThemePalette {
   id: ThemeId;
   displayName: string;
   blurb: string;
-  swatch: string; // theme picker dot
-  font: string;
+  swatch: string;
 
   // Chrome / CSS
-  bg: string; // page + frame background
-  panel: string; // card / panel background
+  bg: string;
+  panel: string;
   text: string;
   textDim: string;
   accent: string;
   accent2: string;
+  font: string;
 
   // Radar face
-  mapBg: string; // face fill
-  land: string;
-  water: string;
-  ring: string; // radar rings + grid lines
-  ringStrong: string;
-  player: string; // player arrow
-  markerDefault: string;
-  backdrop: BackdropStyle;
-  clock: "digital" | "vault" | "phantasy" | "pixel";
+  shape: FaceShape;
+  skin: string | null; // /assets/skins/*.png — the map skin, or null (Pixel)
+  mapBg: string; // fill when no skin / behind it
+  arrow: string; // /assets/arrows/*.png (empty → procedural)
+  arrowGlow?: string;
+  arrowSize: number; // px
+  arrowRotates: boolean; // Pixel is north-up: arrow rotates, map doesn't
+  northUp: boolean; // Pixel: map never rotates
+  ring?: { color: string; width: number }; // Vice pink ring
+  vignette: boolean; // Phantasy / Wasteland / Five dark blurred edge
+  edgeStroke?: string; // thin outer stroke
+  tvNoise: boolean; // Wasteland CRT
+  tint?: string; // multiply tint over the skin (Wasteland)
+  grayscale: boolean; // Five
+  northStyle: NorthStyle;
+
+  // Buttons + clock
+  buttons: FaceButton[];
+  buttonPos: "top" | "bottom" | "none";
+  buttonStyle: ButtonStyle;
+  clock: { layout: ClockLayout; family: string; color: string; barBg?: string; barBorder?: string };
+  iconSet: IconSet;
+  orbGlow: boolean;
 }
+
+const A = "/assets";
 
 export const THEMES: Record<ThemeId, ThemePalette> = {
   vice: {
     id: "vice",
     displayName: "Vice",
     blurb: "Neon night. Sleek and dynamic — perfect for city adventures.",
-    swatch: "#ff40d0",
-    font: `"Jura", system-ui, sans-serif`,
+    swatch: "#ff66ff",
     bg: "#0a0618",
-    panel: "rgba(255,64,208,0.08)",
+    panel: "rgba(255,102,255,0.09)",
     text: "#f4e9ff",
     textDim: "#a98fd0",
-    accent: "#ff40d0",
-    accent2: "#22e0ff",
+    accent: "#ff66ff",
+    accent2: "#60c1f1",
+    font: `"Gtanum", "Jura", system-ui, sans-serif`,
+    shape: "circle",
+    skin: `${A}/skins/vice.png`,
     mapBg: "#120a2a",
-    land: "#1c1140",
-    water: "#0e2a4a",
-    ring: "rgba(34,224,255,0.22)",
-    ringStrong: "rgba(255,64,208,0.55)",
-    player: "#22e0ff",
-    markerDefault: "#ff40d0",
-    backdrop: "grid",
-    clock: "digital",
+    arrow: `${A}/arrows/vice.png`,
+    arrowSize: 40,
+    arrowRotates: false,
+    northUp: false,
+    ring: { color: "#ff66ff", width: 0.05 },
+    vignette: false,
+    edgeStroke: "rgba(255,102,255,0.5)",
+    tvNoise: false,
+    grayscale: false,
+    northStyle: "badge",
+    buttons: [{ label: "TRACK", action: "track" }],
+    buttonPos: "none",
+    buttonStyle: "none",
+    clock: { layout: "time", family: `"Gtanum", "Jura", sans-serif`, color: "#60c1f1" },
+    iconSet: "vice",
+    orbGlow: true,
   },
+
   phantasy: {
     id: "phantasy",
     displayName: "Phantasy",
     blurb: "A magical, adventure-themed parchment map.",
     swatch: "#c8912f",
-    font: `"HyliaSerif", Georgia, serif`,
     bg: "#241a10",
-    panel: "rgba(210,180,130,0.12)",
+    panel: "rgba(210,180,130,0.14)",
     text: "#f3e6cc",
     textDim: "#c2ab84",
     accent: "#c8912f",
     accent2: "#5c8a3a",
+    font: `"HyliaSerif", Georgia, serif`,
+    shape: "circle",
+    skin: `${A}/skins/phantasy.png`,
     mapBg: "#e9d9b0",
-    land: "#dcc794",
-    water: "#8fb8c4",
-    ring: "rgba(90,60,30,0.28)",
-    ringStrong: "rgba(90,60,30,0.55)",
-    player: "#7a2f1e",
-    markerDefault: "#7a2f1e",
-    backdrop: "parchment",
-    clock: "phantasy",
+    arrow: `${A}/arrows/phantasy.png`,
+    arrowGlow: `${A}/arrows/phantasy-glow.png`,
+    arrowSize: 40,
+    arrowRotates: false,
+    northUp: false,
+    vignette: true,
+    edgeStroke: "#4f4f4f",
+    tvNoise: false,
+    grayscale: false,
+    northStyle: "image",
+    buttons: [],
+    buttonPos: "none",
+    buttonStyle: "none",
+    clock: { layout: "time", family: `"HyliaSerif", serif`, color: "#c8912f" },
+    iconSet: "phantasy",
+    orbGlow: true,
   },
+
   wasteland: {
     id: "wasteland",
     displayName: "Wasteland",
     blurb: "Explore the real world after the bombs fell. Pip-Boy green.",
     swatch: "#38ff7a",
-    font: `"Jura", "Courier New", monospace`,
     bg: "#040a04",
     panel: "rgba(56,255,122,0.08)",
-    text: "#38ff7a",
+    text: "#43e36a",
     textDim: "#1f9c4c",
-    accent: "#ff8a00",
-    accent2: "#38ff7a",
+    accent: "#43e36a",
+    accent2: "#ff8a00",
+    font: `"RobotoCondensed", "Jura", monospace`,
+    shape: "rect",
+    skin: `${A}/skins/wasteland.png`,
     mapBg: "#031603",
-    land: "#062606",
-    water: "#043a1a",
-    ring: "rgba(56,255,122,0.25)",
-    ringStrong: "rgba(56,255,122,0.6)",
-    player: "#38ff7a",
-    markerDefault: "#ff8a00",
-    backdrop: "crt",
-    clock: "vault",
+    arrow: `${A}/arrows/wasteland.png`,
+    arrowSize: 24,
+    arrowRotates: false,
+    northUp: false,
+    vignette: true,
+    edgeStroke: "#4f4f4f",
+    tvNoise: true,
+    tint: "#43e36a",
+    grayscale: false,
+    northStyle: "edge",
+    buttons: [
+      { label: "STAT", action: "missions" },
+      { label: "RADIO", action: "radio" },
+      { label: "TRACK", action: "track" },
+    ],
+    buttonPos: "bottom",
+    buttonStyle: "fallout",
+    clock: { layout: "dateTime", family: `"RobotoCondensed", monospace`, color: "#43e36a" },
+    iconSet: "wasteland",
+    orbGlow: true,
   },
+
   five: {
     id: "five",
     displayName: "Five",
     blurb: "It is happening again.",
     swatch: "#e7b74a",
-    font: `"Jura", system-ui, sans-serif`,
     bg: "#0c0f0c",
-    panel: "rgba(231,183,74,0.09)",
+    panel: "rgba(231,183,74,0.1)",
     text: "#f2efe6",
     textDim: "#b7b09c",
     accent: "#e7b74a",
     accent2: "#7ea6c8",
-    mapBg: "#e7e2d4",
-    land: "#d7d2c0",
-    water: "#a9c4d2",
-    ring: "rgba(40,45,40,0.22)",
-    ringStrong: "rgba(40,45,40,0.5)",
-    player: "#2f6f9f",
-    markerDefault: "#c0392b",
-    backdrop: "clean",
-    clock: "digital",
+    font: `"RobotoCondensed", "Jura", sans-serif`,
+    shape: "rect",
+    skin: `${A}/skins/five.png`,
+    mapBg: "#cfcabb",
+    arrow: `${A}/arrows/five.png`,
+    arrowSize: 44,
+    arrowRotates: false,
+    northUp: false,
+    vignette: true,
+    edgeStroke: "#000",
+    tvNoise: false,
+    grayscale: true,
+    northStyle: "edge",
+    buttons: [
+      { label: "STATS", action: "missions" },
+      { label: "RADIO", action: "radio" },
+      { label: "TRACK", action: "track" },
+    ],
+    buttonPos: "top",
+    buttonStyle: "five",
+    clock: { layout: "dateTime", family: `"RobotoCondensed", monospace`, color: "#3fa34d" },
+    iconSet: "wasteland",
+    orbGlow: true,
   },
+
   pixel: {
     id: "pixel",
     displayName: "Pixel",
     blurb: "A blocky, sandbox-game world map.",
-    swatch: "#5ba838",
-    font: `"Jura", "Courier New", monospace`,
+    swatch: "#7fb238",
     bg: "#0f1a0c",
-    panel: "rgba(91,168,56,0.12)",
+    panel: "rgba(127,178,56,0.14)",
     text: "#eaffea",
     textDim: "#9bc98a",
-    accent: "#5ba838",
-    accent2: "#8a5a2b",
-    mapBg: "#3a6b2a",
-    land: "#4d8a36",
-    water: "#3a6ea5",
-    ring: "rgba(0,0,0,0.25)",
-    ringStrong: "rgba(0,0,0,0.45)",
-    player: "#ffffff",
-    markerDefault: "#c0392b",
-    backdrop: "blocks",
-    clock: "pixel",
+    accent: "#7fb238",
+    accent2: "#e0c341",
+    font: `"Jura", "Courier New", monospace`,
+    shape: "rect",
+    skin: null, // rendered procedurally, north-up
+    mapBg: "#4d8a36",
+    arrow: "", // procedural blocky arrow
+    arrowSize: 22,
+    arrowRotates: true,
+    northUp: true,
+    vignette: false,
+    edgeStroke: "#2b2113",
+    tvNoise: false,
+    grayscale: false,
+    northStyle: "edge",
+    buttons: [
+      { label: "CRAFT", action: "missions" },
+      { label: "TRACK", action: "track" },
+    ],
+    buttonPos: "top",
+    buttonStyle: "five",
+    clock: { layout: "bar", family: `"Jura", monospace`, color: "#3a2113", barBg: "#7fb238", barBorder: "#2b2113" },
+    iconSet: "vice",
+    orbGlow: false,
   },
 };
 
